@@ -3,6 +3,8 @@ package gendoc
 import (
 	"fmt"
 	"html/template"
+	"os"
+	"path"
 	"regexp"
 	"strings"
 )
@@ -11,7 +13,7 @@ var (
 	paraPattern         = regexp.MustCompile(`(\n|\r|\r\n)\s*`)
 	spacePattern        = regexp.MustCompile("( )+")
 	multiNewlinePattern = regexp.MustCompile(`(\r\n|\r|\n){2,}`)
-	specialCharsPattern = regexp.MustCompile(`[^a-zA-Z0-9_-]`)
+	basename            = "v2ray.core."
 )
 
 // PFilter splits the content by new lines and wraps each one in a <p> tag.
@@ -38,7 +40,57 @@ func NoBrFilter(content string) string {
 	return strings.Join(paragraphs, "\n\n")
 }
 
-// AnchorFilter replaces all special characters with URL friendly dashes
-func AnchorFilter(str string) string {
-	return specialCharsPattern.ReplaceAllString(strings.ReplaceAll(str, "/", "_"), "-")
+func ImportLinkFilter(content []string) []string {
+	m := make(map[string]bool, len(content))
+	for _, e := range content {
+		m[path.Dir(path.Clean("/"+os.Getenv("PROTOC_GEN_DOC_PAGE_ROOT")+"/"+e))] = true
+	}
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, strings.TrimPrefix(k, "/"))
+	}
+	return keys
+}
+
+func TypeLinkParser(parent string, this_type string, full_type string, long_type string, this_pack string) string {
+	if !strings.Contains(full_type, basename) {
+		return "#" + full_type
+	}
+
+	// println("p", parent)
+	// println("this", this_type)
+	// println("full", full_type)
+	// println("long", long_type)
+	// println("pack", this_pack)
+	// println(">")
+
+	isInCurrentPackage := this_pack+"."+this_type == full_type
+	if isInCurrentPackage {
+		return "#" + full_type
+	}
+
+	isNestedSubMessage := parent+"."+this_type == full_type
+	if isNestedSubMessage {
+		return "#" + full_type
+	}
+
+	isInSubPackage := this_pack+"."+long_type == full_type
+	if isInSubPackage {
+		tmp := strings.TrimSuffix(long_type, "."+this_type)
+		long_type_path := strings.ReplaceAll(tmp, ".", "/")
+		return long_type_path + "/index.html#" + full_type
+	}
+
+	tmp := strings.TrimPrefix(full_type, basename)
+	tmp = strings.ReplaceAll(tmp, ".", "/")
+	tmp = path.Dir(tmp)
+
+	return "/" + tmp + "/index.html#" + full_type
+}
+
+func commonPackage(files []*File) string {
+	for _, f := range files {
+		return f.Package
+	}
+	return "UNKNOWN PACKAGE"
 }
